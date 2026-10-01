@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hol állsz Európa értéktérképén?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div id="demo" class="demo-banner" hidden>Demó országadatok (ESS-részminta) – a végleges becsléshez lásd a README-t.</div>
+
+<main class="wrap">
+  <!-- 1. Kezdés -->
+  <section id="intro" class="intro">
+    <svg class="intro-wheel" viewBox="0 0 100 100" aria-hidden="true">
+      <circle cx="50" cy="50" r="38" fill="none" stroke="var(--open)" stroke-width="14" stroke-dasharray="70 169" transform="rotate(-90 50 50)"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="var(--enh)" stroke-width="14" stroke-dasharray="46 193" transform="rotate(18 50 50)"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="var(--cons)" stroke-width="14" stroke-dasharray="70 169" transform="rotate(90 50 50)"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="var(--trans)" stroke-width="14" stroke-dasharray="46 193" transform="rotate(198 50 50)"/>
+    </svg>
+    <h1>Hol állsz Európa értéktérképén?</h1>
+    <p>21 rövid leírást olvasol majd különböző emberekről. Mindegyiknél azt jelöld, mennyire hasonlít rád az a személy. Utána megmutatjuk, hová kerülsz az európai országok értékrendjéhez képest.</p>
+    <ul>
+      <li>Kb. 3 perc.</li>
+      <li>Névtelen: csak a 21 választ és egy véletlen azonosítót rögzítjük.</li>
+      <li>Nincs jó vagy rossz válasz.</li>
+    </ul>
+    <p style="margin-top:24px"><button class="btn-primary" id="start">Kezdés</button></p>
+  </section>
+
+  <!-- 2. Kérdések -->
+  <section id="quiz" hidden>
+    <div class="progress"><div id="bar"></div></div>
+    <div class="counter"><span id="count"></span><button class="btn-quiet" id="back">Vissza</button></div>
+    <p class="portrait" id="portrait" aria-live="polite"></p>
+    <p class="prompt">Mennyire hasonlít rád ez a személy?</p>
+    <div class="options" id="options" role="radiogroup" aria-label="Válasz"></div>
+  </section>
+
+  <!-- 3. Eredmény -->
+  <section id="result" hidden>
+    <h2>Itt állsz az európai értéktérben</h2>
+    <p class="status" id="status"></p>
+    <div class="map-wrap"><svg class="map" id="map" role="img" aria-label="Értéktérkép az országokkal és a te pontoddal"></svg></div>
+    <div class="legend"><span class="l-me">Te</span><span class="l-country">Országok átlaga</span><span id="peerLegend" class="l-peer" hidden>Csoporttársak</span></div>
+
+    <h2>Hozzád legközelebb álló országok</h2>
+    <div class="near" id="near"></div>
+
+    <h2>Az értékprofilod</h2>
+    <div class="bars" id="bars"></div>
+    <p class="bars-note" id="barsNote"></p>
+
+    <p style="margin-top:26px"><button class="btn-quiet" id="again">Újrakitöltöm</button></p>
+
+    <details>
+      <summary>Hogyan készül a térkép?</summary>
+      <p>A válaszaidból a Schwartz-féle tíz alapérték pontszámát számoljuk, mindegyiket a saját 21 válaszod átlagához viszonyítva (centrírozás). Így az számít, mi fontosabb neked a többihez képest, nem az, hogy általában magasra vagy alacsonyra pontozol.</p>
+      <p>Az országok pontjai az Európai Társadalomkutatás (ESS) válaszadóinak ugyanígy számolt országos átlagai. A térkép klasszikus többdimenziós skálázással (MDS) készült az országok tízdimenziós profiljaiból; a te pontodat ugyanebbe a térbe vetítjük. A színes vonalak azt mutatják, merre nő az adott érték.</p>
+      <p>Az egyének közötti különbségek jóval nagyobbak, mint az országátlagok közöttiek, ezért természetes, ha messze kerülsz az országok felhőjétől. A legközelebbi országokat mind a tíz érték alapján számoljuk.</p>
+      <p id="source"></p>
+    </details>
+  </section>
+</main>
+
+<script src="data/countries.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/schwartz.js"></script>
+<script src="assets/api.js"></script>
+<script>
+(function () {
+  'use strict';
+  var S = window.Schwartz, API = window.SchwartzAPI, CFG = window.SCHWARTZ_CONFIG || {};
+  var DATA = window.COUNTRY_DATA;
+  var space = S.buildSpace(DATA);
+  var answers = new Array(21).fill(null);
+  var idx = 0;
+  var $ = function (id) { return document.getElementById(id); };
+
+  if (DATA.meta && DATA.meta.demo) $('demo').hidden = false;
+  $('source').textContent = 'Adatforrás: ' + DATA.meta.source + '. ' + DATA.meta.sample;
+
+  function show(id) {
+    ['intro', 'quiz', 'result'].forEach(function (s) { $(s).hidden = s !== id; });
+    window.scrollTo(0, 0);
+  }
+
+  function renderItem() {
+    var it = S.ITEMS[idx];
+    $('portrait').textContent = it.text;
+    $('count').textContent = (idx + 1) + ' / 21';
+    $('bar').style.width = (idx / 21 * 100) + '%';
+    $('back').style.visibility = idx === 0 ? 'hidden' : 'visible';
+    var box = $('options'); box.innerHTML = '';
+    S.SCALE.forEach(function (label, k) {
+      var b = document.createElement('button');
+      b.className = 'opt' + (answers[idx] === k + 1 ? ' selected' : '');
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', answers[idx] === k + 1 ? 'true' : 'false');
+      b.innerHTML = '<span class="dot"></span><span></span>';
+      b.lastChild.textContent = label;
+      b.addEventListener('click', function () { choose(k + 1, b); });
+      box.appendChild(b);
+    });
+  }
+
+  var busy = false;
+  function choose(val, btn) {
+    if (busy) return;
+    busy = true;
+    answers[idx] = val;
+    Array.prototype.forEach.call($('options').children, function (c) { c.classList.remove('selected'); c.setAttribute('aria-checked', 'false'); });
+    btn.classList.add('selected'); btn.setAttribute('aria-checked', 'true');
+    setTimeout(function () {
+      busy = false;
+      if (idx < 20) { idx++; renderItem(); } else { finish(); }
+    }, 200);
+  }
+
+  $('start').addEventListener('click', function () { idx = 0; show('quiz'); renderItem(); });
+  $('back').addEventListener('click', function () { if (idx > 0) { idx--; renderItem(); } });
+  $('again').addEventListener('click', function () { answers.fill(null); idx = 0; show('quiz'); renderItem(); });
+
+  function finish() {
+    $('bar').style.width = '100%';
+    var v = S.score(answers);
+    var p = space.project(v);
+    var me = { x: p[0], y: p[1], kind: 'me' };
+    show('result');
+    S.drawMap($('map'), space, { points: [me], highlight: CFG.HIGHLIGHT });
+    renderNear(v);
+    renderBars(v);
+    try { localStorage.setItem('schwartz-last', JSON.stringify(answers)); } catch (e) {}
+
+    if (API.enabled()) {
+      $('status').className = 'status';
+      $('status').textContent = 'Küldés a csoport térképére…';
+      API.submit(answers).then(function () {
+        $('status').className = 'status ok';
+        $('status').textContent = 'Elküldve. A pontod megjelent a közös térképen.';
+        return API.list();
+      }).then(function (rows) {
+        var mine = API.clientId();
+        var peers = rows.filter(function (r) { return r.id !== mine; }).map(function (r) {
+          var q = space.project(S.score(r.raw)); return { x: q[0], y: q[1], kind: 'peer' };
+        });
+        if (peers.length) {
+          $('peerLegend').hidden = false;
+          S.drawMap($('map'), space, { points: peers.concat([me]), highlight: CFG.HIGHLIGHT });
+        }
+      }).catch(function (err) {
+        $('status').className = 'status err';
+        $('status').textContent = 'A küldés nem sikerült (' + err.message + '). A saját eredményed ettől még érvényes.';
+      });
+    } else {
+      $('status').textContent = '';
+    }
+  }
+
+  function renderNear(v) {
+    var near = S.nearestCountries(space, v, 3);
+    $('near').innerHTML = '';
+    near.forEach(function (c, i) {
+      var d = document.createElement('div');
+      d.innerHTML = '<b></b><small></small>';
+      d.firstChild.textContent = c.name;
+      d.lastChild.textContent = i === 0 ? 'legközelebb' : (i + 1) + '. legközelebbi';
+      $('near').appendChild(d);
+    });
+  }
+
+  function renderBars(v) {
+    var ref = null, refName = '';
+    DATA.countries.forEach(function (c) { if (c.code === CFG.HIGHLIGHT) { ref = c.v; refName = c.name; } });
+    var lim = 2.5;
+    $('bars').innerHTML = '';
+    S.VALUES.forEach(function (val, j) {
+      var info = S.VALUE_INFO[val], col = S.GROUPS[info.group].color;
+      var row = document.createElement('div'); row.className = 'bar-row';
+      var lab = document.createElement('span'); lab.textContent = info.name;
+      var tr = document.createElement('div'); tr.className = 'bar-track';
+      var x = Math.max(-lim, Math.min(lim, v[j]));
+      var fill = document.createElement('div'); fill.className = 'fill'; fill.style.background = col;
+      var w = Math.abs(x) / lim * 50;
+      fill.style.left = (x >= 0 ? 50 : 50 - w) + '%'; fill.style.width = w + '%';
+      tr.appendChild(fill);
+      var z = document.createElement('div'); z.className = 'zero'; tr.appendChild(z);
+      if (ref) {
+        var r = document.createElement('div'); r.className = 'ref';
+        r.style.left = 'calc(' + (50 + Math.max(-lim, Math.min(lim, ref[j])) / lim * 50) + '% - 1.5px)';
+        r.title = refName + ' átlaga';
+        tr.appendChild(r);
+      }
+      row.appendChild(lab); row.appendChild(tr);
+      $('bars').appendChild(row);
+    });
+    $('barsNote').textContent = 'Jobbra: a saját átlagodnál fontosabb, balra: kevésbé fontos.' + (ref ? ' A fekete jel ' + refName + ' átlaga.' : '');
+  }
+})();
+</script>
+</body>
+</html>

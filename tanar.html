@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Értéktérkép – kivetítő</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+<script src="assets/qrcode.js"></script>
+</head>
+<body>
+<div id="demo" class="demo-banner" hidden>Demó országadatok (ESS-részminta) – a végleges becsléshez lásd a README-t.</div>
+<div class="teacher">
+  <div class="map-wrap"><svg class="map" id="map" role="img" aria-label="Értéktérkép a csoport pontjaival"></svg></div>
+
+  <aside class="side">
+    <h1>Hol áll a csoport?</h1>
+    <div class="qr" id="qr"></div>
+    <div class="url" id="url"></div>
+
+    <div class="count" id="count">0</div>
+    <div class="muted">kitöltő</div>
+    <p class="status" id="status" style="margin-top:10px"></p>
+
+    <div class="legend">
+      <span class="l-peer">Hallgatók</span>
+      <span class="l-mean">Csoportátlag</span>
+      <span class="l-country">Országok</span>
+    </div>
+    <div id="near" class="muted" style="font-size:.95rem"></div>
+
+    <label class="muted" for="session" style="display:block;margin-top:22px;font-size:.85rem">Csoportkód</label>
+    <input class="session-input" id="session" autocomplete="off" spellcheck="false">
+    <div class="row">
+      <button class="btn-outline" id="newSession">Új csoport</button>
+      <button class="btn-outline" id="csv">CSV letöltése</button>
+      <button class="btn-outline" id="toggle">Hallgatói pontok: be</button>
+    </div>
+  </aside>
+</div>
+
+<script src="data/countries.js"></script>
+<script src="assets/config.js"></script>
+<script src="assets/schwartz.js"></script>
+<script src="assets/api.js"></script>
+<script>
+(function () {
+  'use strict';
+  var S = window.Schwartz, API = window.SchwartzAPI, CFG = window.SCHWARTZ_CONFIG || {};
+  var DATA = window.COUNTRY_DATA, space = S.buildSpace(DATA);
+  var $ = function (id) { return document.getElementById(id); };
+  var rows = [], showPeers = true, timer = null;
+  if (DATA.meta && DATA.meta.demo) $('demo').hidden = false;
+
+  var session = API.session();
+  $('session').value = session;
+
+  function surveyUrl() {
+    var base = location.href.split('?')[0].replace(/tanar\.html$/, '');
+    if (!/\/$/.test(base)) base = base.replace(/[^/]*$/, '');
+    return base + 'index.html?s=' + encodeURIComponent(session);
+  }
+
+  function renderQR() {
+    var u = surveyUrl();
+    $('qr').innerHTML = '';
+    var qr = qrcode(0, 'M'); qr.addData(u); qr.make();
+    $('qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    $('url').textContent = u;
+  }
+
+  function draw() {
+    var pts = [], mean = null;
+    var vs = rows.map(function (r) { return S.score(r.raw); });
+    if (showPeers) vs.forEach(function (v) { var p = space.project(v); pts.push({ x: p[0], y: p[1], kind: 'peer' }); });
+    if (vs.length) {
+      mean = S.VALUES.map(function (_, j) { return vs.reduce(function (a, v) { return a + v[j]; }, 0) / vs.length; });
+      var pm = space.project(mean);
+      pts.push({ x: pm[0], y: pm[1], kind: 'mean', label: 'Csoportátlag' });
+      var near = S.nearestCountries(space, mean, 3).map(function (c) { return c.name; });
+      $('near').textContent = 'A csoportátlaghoz legközelebb: ' + near.join(', ') + '.';
+    } else {
+      $('near').textContent = '';
+    }
+    S.drawMap($('map'), space, { points: pts, highlight: CFG.HIGHLIGHT });
+    $('count').textContent = rows.length;
+  }
+
+  function refresh() {
+    if (!API.enabled()) {
+      $('status').className = 'status err';
+      $('status').textContent = 'Nincs beállítva háttér (APPS_SCRIPT_URL a config.js-ben), így nem érkeznek pontok.';
+      draw(); return;
+    }
+    API.list(session).then(function (r) {
+      rows = r; $('status').className = 'status';
+      $('status').textContent = 'Frissítve: ' + new Date().toLocaleTimeString('hu-HU');
+      draw();
+    }).catch(function (e) {
+      $('status').className = 'status err';
+      $('status').textContent = 'Hiba a lekérésnél: ' + e.message;
+    });
+  }
+
+  function setSession(s) {
+    session = s.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'ora1';
+    $('session').value = session;
+    history.replaceState(null, '', location.pathname + '?s=' + encodeURIComponent(session));
+    rows = []; renderQR(); refresh();
+  }
+
+  $('session').addEventListener('change', function () { setSession(this.value); });
+  $('newSession').addEventListener('click', function () {
+    var d = new Date();
+    setSession('ora' + (d.getMonth() + 1) + String(d.getDate()).padStart(2, '0') + '-' + Math.random().toString(36).slice(2, 5));
+  });
+  $('toggle').addEventListener('click', function () {
+    showPeers = !showPeers; this.textContent = 'Hallgatói pontok: ' + (showPeers ? 'be' : 'ki'); draw();
+  });
+  $('csv').addEventListener('click', function () {
+    var head = ['azonosito'].concat(S.ITEMS.map(function (i) { return i.id; })).concat(S.VALUES.map(function (v) { return 'c_' + v; })).concat(['dim1', 'dim2']);
+    var lines = [head.join(',')];
+    rows.forEach(function (r) {
+      var v = S.score(r.raw), p = space.project(v);
+      lines.push([r.id].concat(r.raw).concat(v.map(function (x) { return x.toFixed(4); })).concat([p[0].toFixed(4), p[1].toFixed(4)]).join(','));
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schwartz_' + session + '.csv'; a.click();
+  });
+
+  renderQR(); refresh();
+  timer = setInterval(refresh, 5000);
+})();
+</script>
+</body>
+</html>
