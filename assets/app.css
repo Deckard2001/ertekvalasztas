@@ -66,6 +66,7 @@ svg.map .arrow { stroke-width: 2.5; opacity: .35; }
 svg.map .arrow-label { font-size: 28px; font-weight: 700; opacity: .85; }
 svg.map .country { fill: #8B93A3; }
 svg.map .country.hl { fill: var(--ink); }
+svg.map .leader { stroke: #8B93A3; stroke-width: 1.5; opacity: .7; }
 svg.map .country-label { font-size: 28px; fill: #5E6677; font-weight: 600; }
 svg.map .country-label.hl { fill: var(--ink); font-weight: 800; }
 svg.map .peer { fill: var(--peer); opacity: .5; }

@@ -192,7 +192,7 @@
     space.countries.forEach(function (c) { cext = Math.max(cext, Math.abs(c.x), Math.abs(c.y)); });
     var pext = 0;
     pts.forEach(function (p) { pext = Math.max(pext, Math.abs(p.x), Math.abs(p.y)); });
-    var ext = Math.max(cext * 1.5, Math.min(pext * 1.1, cext * 2.6));
+    var ext = Math.max(cext * 1.15, Math.min(pext * 1.1, cext * 2.2));
     var sc = (W / 2 - PAD) / ext;
     var X = function (x) { return W / 2 + x * sc; };
     var Y = function (y) { return H / 2 - y * sc; };
@@ -217,6 +217,18 @@
     txt(e2.pos, { x: W / 2 + 12, y: 36, class: 'axis-end', 'text-anchor': 'start' });
     txt(e2.neg, { x: W / 2 + 12, y: H - 18, class: 'axis-end', 'text-anchor': 'start' });
 
+    // Címkeütközéshez: foglalt téglalapok [x0, y0, x1, y1]
+    var obstacles = [
+      [W - 14 - e1.pos.length * 13, H / 2 + 12, W - 14, H / 2 + 40],
+      [14, H / 2 + 12, 14 + e1.neg.length * 13, H / 2 + 40],
+      [W / 2 + 12, 12, W / 2 + 12 + e2.pos.length * 13, 42],
+      [W / 2 + 12, H - 42, W / 2 + 12 + e2.neg.length * 13, H - 12]
+    ];
+    function textBox(l) {
+      var x0 = l.x - (l.anchor === 'end' ? l.w : l.anchor === 'middle' ? l.w / 2 : 0);
+      return [x0, l.y - l.h * 0.75, x0 + l.w, l.y + l.h * 0.25];
+    }
+
     // értékirányok (a tengelyek súlyai)
     if (opts.showArrows !== false) {
       var g = el('g', { class: 'arrows' });
@@ -233,6 +245,7 @@
           anchor: dx > 25 ? 'start' : (dx < -25 ? 'end' : 'middle'), w: name.length * 15.5, h: 30 });
       });
       relax(labs);
+      labs.forEach(function (l) { obstacles.push(textBox(l)); });
       labs.forEach(function (l) {
         txt(l.s, { x: l.x, y: l.y, fill: l.col, class: 'arrow-label', 'text-anchor': l.anchor }, g);
       });
@@ -241,16 +254,53 @@
     // országok (a kiemelt ország legfelül)
     var gc = el('g', { class: 'countries' });
     var cs = space.countries.slice().sort(function (a, b) { return (a.code === opts.highlight) - (b.code === opts.highlight); });
-    var clabs = [];
+    // Címkék elhelyezése: minden országnál több jelölt pozíciót próbálunk (jobbra, balra,
+    // fent, lent, átlósan, majd távolabb), és azt választjuk, amelyik a legkevésbé ütközik
+    // a pontokkal, a többi címkével és az értéknevekkel. Távoli címkét vonal köt a ponthoz.
+    var dots = cs.map(function (c) { var r = c.code === opts.highlight ? 13 : 10; return [X(c.x) - r, Y(c.y) - r, X(c.x) + r, Y(c.y) + r]; });
+    function overlap(p, q) {
+      var w = Math.min(p[2], q[2]) - Math.max(p[0], q[0]), h = Math.min(p[3], q[3]) - Math.max(p[1], q[1]);
+      return w > 0 && h > 0 ? w * h : 0;
+    }
+    var placed = [];
+    var order = cs.map(function (c, i) { return i; }).sort(function (i, j) {
+      var hi = cs[i].code === opts.highlight, hj = cs[j].code === opts.highlight;
+      if (hi !== hj) return hi ? -1 : 1;
+      var crowd = function (k) { return dots.reduce(function (n, d) { return n + (Math.hypot(d[0] - dots[k][0], d[1] - dots[k][1]) < 90 ? 1 : 0); }, 0); };
+      return crowd(j) - crowd(i);
+    });
+    var DIRS = [[1, 0], [-1, 0], [0, -1], [0, 1], [1, -1], [-1, -1], [1, 1], [-1, 1]];
+    order.forEach(function (i) {
+      var c = cs[i], hl = c.code === opts.highlight, cx = X(c.x), cy = Y(c.y);
+      var w = c.code.length * (hl ? 19 : 18), h = 28, best = null;
+      [16, 40, 66].forEach(function (dist, ring) {
+        DIRS.forEach(function (d, k) {
+          var bx = d[0] > 0 ? cx + dist : d[0] < 0 ? cx - dist - w : cx - w / 2;
+          var by = d[1] > 0 ? cy + dist - 4 : d[1] < 0 ? cy - dist - h + 4 : cy - h / 2;
+          var box = [bx, by, bx + w, by + h];
+          if (box[0] < 4 || box[2] > W - 4 || box[1] < 4 || box[3] > H - 4) return;
+          var cost = ring * 400 + k * 6;
+          dots.forEach(function (o) { cost += overlap(box, o) * 8; });
+          placed.forEach(function (o) { cost += overlap(box, o.box) * 10; });
+          obstacles.forEach(function (o) { cost += overlap(box, o) * 3; });
+          if (!best || cost < best.cost) best = { cost: cost, box: box, ring: ring };
+        });
+      });
+      placed.push({ c: c, hl: hl, box: best.box, cx: cx, cy: cy, far: best.ring > 0 });
+    });
+    placed.forEach(function (l) {
+      if (l.far) {
+        var tx = Math.max(l.box[0], Math.min(l.cx, l.box[2])), ty = Math.max(l.box[1], Math.min(l.cy, l.box[3]));
+        el('line', { x1: l.cx, y1: l.cy, x2: tx, y2: ty, class: 'leader' }, gc);
+      }
+    });
     cs.forEach(function (c) {
       var hl = c.code === opts.highlight;
       el('circle', { cx: X(c.x), cy: Y(c.y), r: hl ? 10 : 7, class: hl ? 'country hl' : 'country' }, gc);
-      clabs.push({ s: c.code, name: c.name, hl: hl, x: X(c.x) + 12, y: Y(c.y) + 10, anchor: 'start', w: 44, h: 28 });
     });
-    relax(clabs, 80);
-    clabs.forEach(function (l) {
-      var t = txt(l.s, { x: l.x, y: l.y, class: l.hl ? 'country-label hl' : 'country-label' }, gc);
-      var title = document.createElementNS(NS, 'title'); title.textContent = l.name; t.appendChild(title);
+    placed.forEach(function (l) {
+      var t = txt(l.c.code, { x: l.box[0], y: l.box[3] - 6, class: l.hl ? 'country-label hl' : 'country-label' }, gc);
+      var title = document.createElementNS(NS, 'title'); title.textContent = l.c.name; t.appendChild(title);
     });
 
     // hallgatók
