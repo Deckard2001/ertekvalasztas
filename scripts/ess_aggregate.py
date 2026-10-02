@@ -58,13 +58,15 @@ def main():
     a = ap.parse_args()
 
     df = load(a.file)
-    # ESS11-ben a tételnevek 'a' végződésűek lehetnek (pl. ipcrtiva)
-    cols = {}
-    for it in ITEMS:
-        if it in df.columns: cols[it] = it
-        elif it + 'a' in df.columns: cols[it] = it + 'a'
-        else: sys.exit(f'Hiányzó tétel: {it}')
-    X = df[[cols[i] for i in ITEMS]].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float, copy=True)
+    # ESS11-ben a tételnevek 'a' végződésűek (pl. ipcrtiva). Összefűzött (több hullámos)
+    # fájlban mindkét változat szerepelhet, soronként más-más kitöltve: ilyenkor összefésüljük.
+    def item(it):
+        v = [c for c in (it, it + 'a') if c in df.columns]
+        if not v: sys.exit(f'Hiányzó tétel: {it}')
+        s = pd.to_numeric(df[v[0]], errors='coerce')
+        for c in v[1:]: s = s.fillna(pd.to_numeric(df[c], errors='coerce'))
+        return s
+    X = np.column_stack([item(i).to_numpy(dtype=float) for i in ITEMS])
     X[(X < 1) | (X > 6)] = np.nan          # 7/8/9 = nem válaszolt stb.
     X = 7 - X
 
@@ -90,7 +92,10 @@ def main():
         m = ok & (cntry == c)
         if m.sum() < 100: continue
         means = np.average(V[m], axis=0, weights=w[m])
-        out.append({'code': c, 'name': EU27.get(c, c), 'n': int(m.sum()), 'v': [round(float(x), 4) for x in means]})
+        d = {'code': c, 'name': EU27.get(c, c), 'n': int(m.sum()), 'v': [round(float(x), 4) for x in means]}
+        if 'essround' in df.columns:
+            d['round'] = sorted({int(r) for r in pd.to_numeric(df.loc[m, 'essround'], errors='coerce').dropna()})
+        out.append(d)
     out.sort(key=lambda d: d['name'])
     if len(out) < 3: sys.exit('Túl kevés ország.')
 

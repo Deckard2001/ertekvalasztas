@@ -63,9 +63,9 @@ Hasznos tudnivalók:
 
 ## 3. Országadatok
 
-**A mellékelt `data/countries.js` demó.** Forrása az ESS 11. hulláma (2023–24), egy nyilvános GitHub-projektből (GMBermeo/Human-Cartography-of-European-Values). Országonként 340 fős, véletlen, **súlyozatlan** részmintát tartalmaz, 22 EU-országra. Az ESS 11-ben nem szerepel Csehország, Dánia, Luxemburg, Málta és Románia. Az oldalak sárga sávval jelzik, hogy demó adatokról van szó.
+**A `data/countries.js` a teljes, súlyozott ESS-mintából készült** (`anweight`): az ESS 11. hulláma (2023–24), Csehország az ESS 10. hullámából (2020–22), mert a 11.-ben nem szerepel. 23 EU-ország, országonként 665–2775 válaszadó. Dánia, Luxemburg, Málta és Románia egyik hullámban sem szerepel. Az első két MDS-tengely az országok közti eltérés kb. 79%-át írja le (57% + 22%).
 
-A végleges, súlyozott becsléshez töltsd le az ESS-adatfájlt (europeansocialsurvey.org), majd futtasd:
+Újraszámoláshoz töltsd le az ESS-adatfájlt (europeansocialsurvey.org), majd futtasd:
 
 ```bash
 pip install pandas pyreadstat
@@ -75,7 +75,7 @@ python scripts/ess_aggregate.py ESS11e04_2.sav --label "ESS 11. hullám (2023–
 A script működése:
 
 - **Fájlformátumok:** `.sav`, `.dta` és `.csv` fájlt is elfogad.
-- **Tételnevek:** felismeri az ESS 11 `a` végződésű tételneveit is (pl. `ipcrtiva`).
+- **Tételnevek:** felismeri az ESS 11 `a` végződésű tételneveit is (pl. `ipcrtiva`); összefűzött, több hullámos fájlban a két változatot soronként összefésüli.
 - **Súlyozás:** alapból `anweight`-tel súlyoz.
 - **Hiányzó adat:** kizárja azokat, akiknek 5-nél több tétele hiányzik.
 - **Kimenet:** felülírja a `data/countries.js`-t, és a demó jelzés is eltűnik.
